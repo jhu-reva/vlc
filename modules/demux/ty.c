@@ -325,7 +325,7 @@ static int Open(vlc_object_t *p_this)
 
     /* create our structure that will hold all data */
     p_demux->p_sys = p_sys = malloc(sizeof(demux_sys_t));
-    memset(p_sys, 0, sizeof(demux_sys_t));
+    memset(p_sys, 0, sizeof(demux_sys_t));  // setting p_sys with all 0s
 
     /* set up our struct (most were zero'd out with the memset above) */
     p_sys->b_first_chunk = true;
@@ -1623,8 +1623,15 @@ static int ty_stream_seek_time(demux_t *p_demux, uint64_t l_seek_time)
 static void parse_master(demux_t *p_demux)
 {
     demux_sys_t *p_sys = p_demux->p_sys;
-    uint8_t mst_buf[32];
-    int i, i_map_size;
+
+    uint8_t mst_buf[32];    // array of 32, 8-bit unsigned ints
+    int i, i_map_size;      // 32b int
+    /*
+        problems with above variables:
+        - mst_buf:      32B not always enough space for user input
+        - i_map_size:   completely derived from user input without proper checking
+    */
+    
     int64_t i_save_pos = stream_Tell(p_demux->s);
     int64_t i_pts_secs;
 
@@ -1638,8 +1645,23 @@ static void parse_master(demux_t *p_demux)
     free(p_sys->seq_table);
     
     /* parse header info */
-    stream_Read(p_demux->s, mst_buf, 32);
+
+    stream_Read(p_demux->s, mst_buf, 32); // data read from input stream
+        // try to read 32 bytes from stream into mst_buf
+        // no issues except: buffer is tainted
+        // bc an external entity was able to place any values into it
+    
     i_map_size = U32_AT(&mst_buf[20]);  /* size of bitmask, in bytes */
+    /* breaking down above line:
+        &mst_buf[20]
+            grab address of 20th element of mst_buf (array of 32, 1B unsigned ints)
+            call U32_AT() with data starting at that address
+                U32_AT() takes 4B and converts to integer
+                    so returns value of 20th, 21st, 22nd, and 23rd elements all together
+                        (1B each x 4) --> 4B, or 32b integer
+                also, U32_AT() is inline, so endianness of 4B messed up?
+        i_map_size = a 32b integer (that indicates the number of bytes in the __?___)
+    */
     p_sys->i_bits_per_seq_entry = i_map_size * 8;
     i = U32_AT(&mst_buf[28]);   /* size of SEQ table, in bytes */
     p_sys->i_seq_table_size = i / (8 + i_map_size);
@@ -1647,8 +1669,14 @@ static void parse_master(demux_t *p_demux)
     /* parse all the entries */
     p_sys->seq_table = malloc(p_sys->i_seq_table_size * sizeof(ty_seq_table_t));
     for (i=0; i<p_sys->i_seq_table_size; i++) {
-        stream_Read(p_demux->s, mst_buf, 8 + i_map_size);
+        stream_Read(p_demux->s, mst_buf, 8 + i_map_size); // data read from input stream
+        // try to read (8 + i_map_size) number of bytes from stream into mst_buf
+
+
         p_sys->seq_table[i].l_timestamp = U64_AT(&mst_buf[0]);
+        /*
+            U64_AT() gives value of 8B in int (int64, not int32)
+        */
         if (i_map_size > 8) {
             msg_Err(p_demux, "Unsupported SEQ bitmap size in master chunk");
             memset(p_sys->seq_table[i].chunk_bitmask, i_map_size, 0);

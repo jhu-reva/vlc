@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.js": "javascriptreact",
+        "vlc_codec.h": "c"
+    },
+    "workbench.colorTheme": "High Contrast Dark Pro"
+}
